@@ -57,20 +57,32 @@ def load_edges(tx, edges):
         )
 
 
+def clear_graph(tx):
+    """Delete all nodes and relationships."""
+    tx.run("MATCH (n) DETACH DELETE n")
+
+
 def main():
+    import sys
+    clear = "--clear" in sys.argv
+
     with open("entities.json", "r") as f:
         data = json.load(f)
 
     nodes = data["nodes"]
     edges = data["edges"]
 
-    print(f"Loading {len(nodes)} nodes and {len(edges)} edges into Neo4j...")
-
     with driver.session() as session:
+        if clear:
+            print("Clearing existing graph...")
+            session.execute_write(clear_graph)
+            print("  Graph cleared.")
+
+        print(f"Loading {len(nodes)} nodes and {len(edges)} edges into Neo4j...")
         session.execute_write(load_nodes, nodes)
-        print(f"  Nodes loaded.")
+        print("  Nodes loaded.")
         session.execute_write(load_edges, edges)
-        print(f"  Edges loaded.")
+        print("  Edges loaded.")
 
     driver.close()
     print("Done! Open Neo4j Browser to explore your graph.")

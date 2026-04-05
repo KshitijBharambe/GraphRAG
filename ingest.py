@@ -11,8 +11,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 dotenv.load_dotenv()
 
-token = os.getenv("GitHub_Token")
-if not token:
+github_token = os.getenv("GitHub_Token")
+if not github_token:
     raise RuntimeError("GitHub_Token not found in .env")
 
 # --- Config ---
@@ -24,7 +24,7 @@ REPOS = [
 MAX_ISSUES = 15  # per repo, keep it manageable
 
 # --- Setup ---
-g = Github(auth=Auth.Token(token))
+g = Github(auth=Auth.Token(github_token))
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
 all_chunks = []
@@ -37,12 +37,14 @@ for repo_name in REPOS:
     try:
         readme_text = repo.get_readme().decoded_content.decode("utf-8")
         for i, chunk in enumerate(splitter.split_text(readme_text)):
-            all_chunks.append({
-                "source": "readme",
-                "repo": repo_name,
-                "chunk_id": i,
-                "text": chunk,
-            })
+            all_chunks.append(
+                {
+                    "source": "readme",
+                    "repo": repo_name,
+                    "chunk_id": i,
+                    "text": chunk,
+                }
+            )
     except Exception as e:
         print(f"  Could not get README for {repo_name}: {e}")
 
@@ -55,13 +57,15 @@ for repo_name in REPOS:
         if not issue.body:
             continue
         for i, chunk in enumerate(splitter.split_text(issue.body)):
-            all_chunks.append({
-                "source": "issue",
-                "repo": repo_name,
-                "title": issue.title,
-                "chunk_id": i,
-                "text": chunk,
-            })
+            all_chunks.append(
+                {
+                    "source": "issue",
+                    "repo": repo_name,
+                    "title": issue.title,
+                    "chunk_id": i,
+                    "text": chunk,
+                }
+            )
         count += 1
 
 print(f"Total chunks: {len(all_chunks)}")

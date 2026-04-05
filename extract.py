@@ -32,24 +32,31 @@ class ExtractionResult(BaseModel):
 # --- LLM setup ---
 client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="lm-studio")
 
-SYSTEM_PROMPT = """You are a strict information extraction system. You extract entities and relationships from text and return ONLY valid JSON.
+SYSTEM_PROMPT = """You are a strict information extraction system. You extract high-level entities and relationships from software project text and return ONLY valid JSON.
 
 You must return a JSON object with two arrays: "nodes" and "edges".
 
 Each node has:
-- "name": a short, normalized name for the entity
+- "name": a short, human-readable name (2-4 words max, Title Case)
 - "label": one of [Developer, Repository, Feature, Bug, Concept]
 
+Label definitions:
+- Developer: a person or GitHub username (e.g. "shadcn", "Tim Neutkens")
+- Repository: a GitHub project or library (e.g. "Next.js", "Tailwind CSS", "shadcn/ui")
+- Feature: a user-facing capability or component (e.g. "Dark Mode", "Calendar Component", "CLI Tool")
+- Bug: a reported problem or error (e.g. "Hydration Error", "Build Failure")
+- Concept: a technical idea or pattern (e.g. "CSS Variables", "Server Components", "Design Tokens")
+
 Each edge has:
-- "source": the name of the source node (must match a node name)
-- "target": the name of the target node (must match a node name)
+- "source": the name of the source node (must exactly match a node name above)
+- "target": the name of the target node (must exactly match a node name above)
 - "relation": one of [WROTE, CONTAINS, FIXES, DEPENDS_ON, EXPLAINS]
 
-Rules:
-- Use ONLY information present in the text
-- You MAY normalize names (e.g., "auth system" -> "Authentication")
-- Do NOT invent entities that aren't in the text
-- If you find nothing, return {"nodes": [], "edges": []}
+STRICT RULES — if you break these, the pipeline will fail:
+- NEVER extract: function names, variable names, file paths, HTML tags, CSS class names, code snippets, or raw identifiers like `verbose()`, `<select>`, `SHADCN_VERBOSE`, or `apps/v4/calendar.tsx`
+- ONLY extract real-world concepts a human would naturally talk about
+- Names must be plain English, not code. Bad: "forceMount". Good: "Force Mount Prop"
+- If you find nothing meaningful, return {"nodes": [], "edges": []}
 - Return ONLY the JSON object. No explanation, no markdown."""
 
 USER_TEMPLATE = """Extract entities and relationships from this text:

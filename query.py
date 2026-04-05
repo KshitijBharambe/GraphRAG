@@ -29,24 +29,51 @@ client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="")
 
 # --- Graph schema description for the LLM ---
 GRAPH_SCHEMA = """
-The Neo4j database has:
-- Nodes labeled :Entity with properties: name (string), label (one of: Developer, Repository, Feature, Bug, Concept), repo (string)
-- Relationships of type :RELATES_TO with property: type (one of: WROTE, CONTAINS, FIXES, DEPENDS_ON, EXPLAINS)
+IMPORTANT: Every single node in the database has the label :Entity. There are NO other node labels.
+Node properties:
+  - name (string): the entity's name
+  - label (string): one of Developer, Repository, Feature, Bug, Concept
+  - repo (string): the GitHub repo it came from
+
+Relationships: (a:Entity)-[:RELATES_TO {type: "..."}]->(b:Entity)
+  - The relationship is always :RELATES_TO
+  - The relationship type is stored in the property `type`, which is one of: WROTE, CONTAINS, FIXES, DEPENDS_ON, EXPLAINS
 """
 
-CYPHER_PROMPT = """You are a Neo4j Cypher expert. Given a user question and a graph schema, generate a Cypher query to answer it.
+CYPHER_PROMPT = """You are a Neo4j Cypher expert. Generate a Cypher query to answer the user's question.
 
-Schema:
 {schema}
 
-Rules:
-- Return ONLY the Cypher query, no explanation
-- Use case-insensitive matching with toLower() for name lookups
-- Always RETURN meaningful fields
-- If you can't answer, return: MATCH (n) RETURN 'No relevant query' AS result LIMIT 1
+CRITICAL RULES — violating these will break the query:
+1. EVERY node uses the label :Entity. NEVER use :Feature, :Developer, :Bug, :Concept, :Repository.
+2. Filter by type using the `label` property: WHERE n.label = "Feature"
+3. Filter by name using CONTAINS for flexibility: WHERE toLower(n.name) CONTAINS "keyword"
+4. Only use a relationship pattern when the question asks about connections between entities.
+5. For simple listing/counting questions, use a single node pattern: MATCH (n:Entity)
+6. Correct clause order: MATCH ... WHERE ... RETURN ... LIMIT ...
+7. Return ONLY the raw Cypher. No explanation, no markdown fences.
+
+Examples:
+Q: "List all Feature nodes"
+A: MATCH (n:Entity) WHERE n.label = "Feature" RETURN n.name, n.repo LIMIT 50
+
+Q: "How many entities are there by type?"
+A: MATCH (n:Entity) RETURN n.label AS type, count(n) AS count ORDER BY count DESC
+
+Q: "Show all nodes from the shadcn-ui repo"
+A: MATCH (n:Entity) WHERE n.repo = "shadcn-ui/ui" RETURN n.name, n.label LIMIT 50
+
+Q: "What bugs exist in the next.js repo?"
+A: MATCH (n:Entity) WHERE n.repo = "vercel/next.js" AND n.label = "Bug" RETURN n.name LIMIT 10
+
+Q: "What features are connected to tailwind?"
+A: MATCH (a:Entity)-[:RELATES_TO]->(b:Entity) WHERE toLower(a.name) CONTAINS "tailwind" AND b.label = "Feature" RETURN b.name, b.label LIMIT 10
+
+Q: "List all developers"
+A: MATCH (n:Entity) WHERE n.label = "Developer" RETURN n.name, n.repo LIMIT 20
 
 Question: {question}
-"""
+Cypher: """
 
 ANSWER_PROMPT = """Based on the following database results, answer the user's question in plain English.
 If the results are empty, say you couldn't find relevant information.
@@ -56,6 +83,23 @@ Question: {question}
 Database results:
 {results}
 """
+
+
+_ENTITY_LABELS = {"Feature", "Developer", "Bug", "Concept", "Repository"}
+
+
+def _fix_cypher(cypher: str) -> str:
+    """Rewrite rogue node labels (e.g. MATCH (n:Feature)) into :Entity + WHERE filter."""
+    import re
+
+    label_pattern = "|".join(_ENTITY_LABELS)
+
+    def _replace(m: re.Match) -> str:
+        var = m.group(1) or "n"
+        label = m.group(2)
+        return f'({var}:Entity) WHERE {var}.label = "{label}"'
+
+    return re.sub(rf"\((\w*):({label_pattern})\)", _replace, cypher)
 
 
 def generate_cypher(question: str) -> str:
@@ -82,6 +126,7 @@ def generate_cypher(question: str) -> str:
         cypher = cypher.split("\n", 1)[1]
         cypher = cypher.rsplit("```", 1)[0].strip()
 
+    cypher = _fix_cypher(cypher)
     return cypher
 
 
@@ -112,8 +157,27 @@ def summarize(question: str, results: list[dict]) -> str:
     return response.choices[0].message.content.strip()
 
 
+def check_db() -> int:
+    """Return the number of Entity nodes in the database."""
+    with driver.session() as session:
+        result = session.run("MATCH (n:Entity) RETURN count(n) AS total")
+        return result.single()["total"]
+
+
 def main():
     print("GraphRAG Query Engine")
+
+    count = check_db()
+    if count == 0:
+        print("\nWARNING: The database is empty!")
+        print("Run the pipeline first:")
+        print("  1. python ingest.py      -> output.json")
+        print("  2. python extract.py     -> entities.json")
+        print("  3. python load_graph.py  -> Neo4j populated")
+        print()
+    else:
+        print(f"Connected. {count} entities in graph.\n")
+
     print("Type 'quit' to exit.\n")
 
     while True:
