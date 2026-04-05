@@ -1,0 +1,16 @@
+[project]
+name = "graphrag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=1.2.15",
+    "langchain-experimental>=0.4.1",
+    "langchain-text-splitters>=0.3.0",
+    "neo4j>=6.1.0",
+    "openai>=2.30.0",
+    "pygithub>=2.9.0",
+    "python-dotenv>=1.2.2",
+    "tiktoken>=0.12.0",
+]
